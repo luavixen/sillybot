@@ -3,6 +3,9 @@
   "private": true,
   "type": "module",
   "module": "index.ts",
+  "scripts": {
+    "compile": "bun build --compile --target=bun-linux-x64-modern --bytecode ./index.ts --outfile ./dist/sillybot"
+  },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/debug": "^4.1.12"
