@@ -75,6 +75,13 @@ export async function sendRequest(method: string, path: string, init: BunFetchRe
     previousRequestTimestamps.push(Date.now());
   }
 
+  // check for rate limit
+  if (response.status === 429) {
+    const message = await response.text();
+    const error = new RateLimitError(`rate limit exceeded for ${method} ${url} error: ${message}`);
+    log('%s', error); throw error;
+  }
+
   // parse body
   let body: any;
   try {
@@ -92,14 +99,7 @@ export async function sendRequest(method: string, path: string, init: BunFetchRe
   // handle errors
   if (!response.ok) {
     const message = body?.message || body?.error || inspect(body);
-
-    let error: Error;
-    if (response.status === 429) {
-      error = new RateLimitError(`rate limit exceeded for ${method} ${url} error: ${message}`);
-    } else {
-      error = new RequestError(`response ${response.status} for ${method} ${url} error: ${message}`);
-    }
-
+    const error = new RequestError(`response ${response.status} for ${method} ${url} error: ${message}`);
     log('%s', error); throw error;
   }
 
