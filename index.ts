@@ -1,50 +1,45 @@
 import { debug } from 'debug';
-import {
-  MAXIMUM_SHARES_PER_ACTION,
-  MAXIMUM_REQUESTS_PER_MINUTE,
-  type Integer, isInteger, toInteger,
-  now,
-  getCurrentSharePrice,
-  getCurrentShareOwnedCount,
-  getCurrentWalletBeans,
-  type HistoryRow,
-  type TradeRow,
-  buyShares,
-  sellShares,
-  getLatestHistory,
-  synchronizeStateAndUpdateHistory,
-  type MarketSummary,
-  compileMarketSummary,
-  type MarketCurrentSummaries,
-  compileMarketCurrentSummaries,
-} from './market.ts';
+
+import { RequestError, RateLimitError } from './request.ts';
+import { now } from './market.ts';
+import { performTradeCycle } from './strategy.ts';
+
+/** interval between trade cycles in seconds */
+const TRADE_CYCLE_INTERVAL = 10 * 60 * 1000; // 10 minutes
 
 const log = debug('bot');
 
+async function runTradingLoop(): Promise<never> {
+  while (true) {
+    const startTime = now();
 
-async function trade() {
+    try {
+      await performTradeCycle();
+    } catch (cause) {
+      if (cause instanceof RateLimitError) {
+        log('cycle failed due to rate limit error');
+      } else if (cause instanceof RequestError) {
+        log('cycle failed due to request error');
+      } else {
+        throw cause;
+      }
+    }
 
-  const state = await synchronizeStateAndUpdateHistory();
+    const endTime = now();
 
-  log('%O', state);
+    const elapsedSeconds = endTime - startTime;
+    const sleepSeconds = Math.max(100, TRADE_CYCLE_INTERVAL - elapsedSeconds);
 
-  const summaries = compileMarketCurrentSummaries();
+    log('cycle done in %dms, sleeping for %ds', elapsedSeconds, Math.floor(sleepSeconds / 1000));
 
-  log('%O', summaries);
-
-  // let's Buy a Share
-  log('%O', await buyShares(1));
-
-  log('%o', { walletBeans: await getCurrentWalletBeans() });
-
-  // let's Sell a Share
-
-  log('%O', await sellShares(1));
-
-  log('%o', { walletBeans: await getCurrentWalletBeans() });
-
-  // TODO: actual trade logic
-
+    await new Promise((resolve) => setTimeout(resolve, sleepSeconds));
+  }
 }
 
-trade();
+runTradingLoop().catch((cause) => {
+  log('fatal error: %s', cause);
+  console.error(cause);
+  process.exit(1);
+});
+
+log('hello world :3c');

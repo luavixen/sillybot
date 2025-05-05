@@ -1,13 +1,12 @@
 import { debug } from 'debug';
 import { Database, Statement } from 'bun:sqlite';
+
 import { sendRequest } from './request.ts';
 
 const log = debug('bot:market');
 
-// maximum number of shares that can be bought or sold in a single action
+/** maximum number of shares that can be bought or sold in a single action */
 export const MAXIMUM_SHARES_PER_ACTION = 200;
-// maximum number of requests per minute
-export const MAXIMUM_REQUESTS_PER_MINUTE = 550;
 
 /** represents a 53-bit JavaScript integer */
 export type Integer = number;
@@ -42,43 +41,6 @@ export function toInteger(value: unknown): Integer {
   throw new TypeError(`toInteger value is not a number or string, instead ${typeof value}`);
 }
 
-function inspectInvalidResponse(value: unknown): string {
-  return Bun.inspect(value, { depth: 5, compact: true, colors: false });
-}
-
-/** fetches the current price of a silly share, uses one request */
-async function fetchCurrentSharePrice(): Promise<Integer> {
-  const result = await sendRequest('POST', '/games/sillyexchange', {});
-  if ('price' in result && isInteger(result.price)) {
-    return result.price;
-  } else {
-    const error = new Error('fetchCurrentSharePrice invalid response: ' + inspectInvalidResponse(result));
-    log('%s', error); throw error;
-  }
-}
-
-/** fetches the current number of silly shares that the bot owns, uses one request */
-async function fetchCurrentShareOwnedCount(): Promise<Integer> {
-  const result = await sendRequest('POST', '/games/sillyexchange/owned', {});
-  if (isInteger(result)) {
-    return result;
-  } else {
-    const error = new Error('fetchCurrentShareOwnedCount invalid response: ' + inspectInvalidResponse(result));
-    log('%s', error); throw error;
-  }
-}
-
-/** fetches the current number of beans in the bot's wallet, uses one request */
-async function fetchCurrentWalletBeans(): Promise<Integer> {
-  const result = await sendRequest('GET', 'https://sillypost.net/beans', {});
-  if (isInteger(result)) {
-    return result;
-  } else {
-    const error =  new Error('fetchCurrentWalletBeans invalid response: ' + inspectInvalidResponse(result));
-    log('%s', error); throw error;
-  }
-}
-
 /** returns the current timestamp, the number of milliseconds since 1970 as an integer */
 export function now(): Integer {
   return Math.floor(Date.now());
@@ -101,6 +63,47 @@ const cachedState: MarketCache = {
   walletBeans: null,
   lastSyncTimestamp: null,
 };
+
+/** converts any value into a string */
+function inspectInvalidResponse(value: unknown): string {
+  return Bun.inspect(value, { depth: 5, compact: true, colors: false });
+}
+
+/** fetches the current price of a silly share, uses one request */
+export async function fetchCurrentSharePrice(): Promise<Integer> {
+  const result = await sendRequest('POST', '/games/sillyexchange', {});
+  if ('price' in result && isInteger(result.price)) {
+    cachedState.sharePriceBeans = result.price;
+    return result.price;
+  } else {
+    const error = new Error('fetchCurrentSharePrice invalid response: ' + inspectInvalidResponse(result));
+    log('%s', error); throw error;
+  }
+}
+
+/** fetches the current number of silly shares that the bot owns, uses one request */
+export async function fetchCurrentShareOwnedCount(): Promise<Integer> {
+  const result = await sendRequest('POST', '/games/sillyexchange/owned', {});
+  if (isInteger(result)) {
+    cachedState.shareOwnedCount = result;
+    return result;
+  } else {
+    const error = new Error('fetchCurrentShareOwnedCount invalid response: ' + inspectInvalidResponse(result));
+    log('%s', error); throw error;
+  }
+}
+
+/** fetches the current number of beans in the bot's wallet, uses one request */
+export async function fetchCurrentWalletBeans(): Promise<Integer> {
+  const result = await sendRequest('GET', 'https://sillypost.net/beans', {});
+  if (isInteger(result)) {
+    cachedState.walletBeans = result;
+    return result;
+  } else {
+    const error =  new Error('fetchCurrentWalletBeans invalid response: ' + inspectInvalidResponse(result));
+    log('%s', error); throw error;
+  }
+}
 
 /** creates a cached getter for a specific key in the local cache */
 function createCachedGetterFunction(key: keyof MarketCache, fetchValue: () => Promise<Integer>): () => Promise<Integer> {
@@ -340,13 +343,10 @@ export async function synchronizeStateAndUpdateHistory(): Promise<HistoryRow> {
   const shareOwnedCount = await fetchCurrentShareOwnedCount();
   const walletBeans = await fetchCurrentWalletBeans();
 
-  log('synchronizeStateAndUpdateHistory price=%d owned=%d wallet=%d', sharePriceBeans, shareOwnedCount, walletBeans);
-
   // update the cached state
-  cachedState.sharePriceBeans = sharePriceBeans;
-  cachedState.shareOwnedCount = shareOwnedCount;
-  cachedState.walletBeans = walletBeans;
   cachedState.lastSyncTimestamp = now();
+
+  log('synchronizeStateAndUpdateHistory price=%d owned=%d wallet=%d', sharePriceBeans, shareOwnedCount, walletBeans);
 
   const rowPrevious = getLatestHistory();
 

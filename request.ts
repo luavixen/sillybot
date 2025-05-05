@@ -2,6 +2,23 @@ import { debug } from 'debug';
 
 const log = debug('bot:request');
 
+/** maximum number of requests per minute */
+export const MAXIMUM_REQUESTS_PER_MINUTE = 570;
+
+/** array of js timestamps, one for each request */
+let previousRequestTimestamps: number[] = [];
+
+/** returns the number of requests in the last minute */
+export function getRequestsInLastMinute(): number {
+  const oneMinuteAgo = Date.now() - 60 * 1000;
+
+  // filter out requests older than one minute
+  previousRequestTimestamps = previousRequestTimestamps
+    .filter((timestamp) => timestamp < oneMinuteAgo);
+
+  return previousRequestTimestamps.length;
+}
+
 const requestToken = process.env.TOKEN;
 const requestUserAgent = 'luas-awesome-exchange-bot/1337';
 
@@ -53,6 +70,9 @@ export async function sendRequest(method: string, path: string, init: BunFetchRe
   } catch (cause) {
     const error = new RequestError(`request failed to ${method} ${url}`, { cause });
     log('%s', error); throw error;
+  } finally {
+    // save this request time for rate limiting
+    previousRequestTimestamps.push(Date.now());
   }
 
   // parse body
