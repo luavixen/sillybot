@@ -36,10 +36,10 @@ async function runTradingLoop(): Promise<never> {
   }
 }
 
+log('hello world :3c');
+
 runTradingLoop().catch((cause) => {
   log('fatal error: %s', cause);
   console.error(cause);
   process.exit(1);
 });
-
-log('hello world :3c');

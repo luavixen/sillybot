@@ -26,7 +26,8 @@ import {
   compileMarketCurrentSummaries,
 } from './market.ts';
 
-const log = debug('bot:strategy');
+const logInfo = debug('bot:strategy');
+const logDebug = debug('bot:strategy-debug');
 
 // --- tweakable strategy parameters ---
 
@@ -37,7 +38,7 @@ const MIN_DATA_POINTS_FOR_LOOKBACK = 12; // e.g., 12 * 10 minutes = 2 hours of d
 /** standard deviation multiplier for setting buy/sell thresholds (lower = more sensitive) */
 const K_FACTOR = 1.0;
 /** minimum number of beans to always keep in the wallet */
-const MINIMUM_BEAN_RESERVE: Integer = 500;
+const MINIMUM_BEAN_RESERVE: Integer = 300;
 /** minimum number of shares to always keep */
 const MINIMUM_SHARE_RESERVE: Integer = 10;
 /** fraction of affordable beans or sellable shares to trade in one cycle (0.0 to 1.0) */
@@ -86,7 +87,7 @@ function calculateThresholds(summary: MarketSummary): TradeThresholds {
   let sellThreshold: Integer;
 
   if (baselineStdDev < 1) { // check if effectively zero or very small
-    log('standard deviation is near zero, using fixed threshold difference');
+    logInfo('standard deviation is near zero, using fixed threshold difference');
     buyThreshold = Math.floor(baselineAvg - MIN_STD_DEV_THRESHOLD_DIFF);
     sellThreshold = Math.floor(baselineAvg + MIN_STD_DEV_THRESHOLD_DIFF);
   } else {
@@ -99,7 +100,7 @@ function calculateThresholds(summary: MarketSummary): TradeThresholds {
 
   // ensure thresholds haven't crossed or are too close
   if (buyThreshold >= sellThreshold) {
-    log(`thresholds invalid or crossed: buy=${buyThreshold}, sell=${sellThreshold} - holding`);
+    logInfo(`thresholds invalid or crossed: buy=${buyThreshold}, sell=${sellThreshold} - holding`);
     return { buyThreshold, sellThreshold, isValid: false };
   } else {
     return { buyThreshold, sellThreshold, isValid: true };
@@ -118,7 +119,7 @@ async function executeTrade(
   totalShares: Integer,
   initialPrice: Integer
 ): Promise<boolean> {
-  log(`executing ${actionType} order for ${totalShares} shares (price ${initialPrice})`);
+  logInfo(`executing ${actionType} order for ${totalShares} shares (price ${initialPrice})`);
 
   let remainingShares = totalShares;
   let currentBackoff = INITIAL_BACKOFF_MS;
@@ -128,14 +129,14 @@ async function executeTrade(
     // proactive rate limit check
     const requestsLastMinute = getRequestsInLastMinute();
     if (requestsLastMinute >= MAXIMUM_REQUESTS_PER_MINUTE - PROACTIVE_RATE_LIMIT_THRESHOLD) {
-      log(`nearing rate limit (${requestsLastMinute} requests), pausing proactively for ${PROACTIVE_RATE_LIMIT_DELAY_MS}ms`);
+      logInfo(`nearing rate limit (${requestsLastMinute} requests), pausing proactively for ${PROACTIVE_RATE_LIMIT_DELAY_MS}ms`);
       await sleep(PROACTIVE_RATE_LIMIT_DELAY_MS);
     }
 
     const chunkSize = Math.min(remainingShares, MAXIMUM_SHARES_PER_ACTION);
 
     try {
-      log(`attempting to ${actionType} chunk of ${chunkSize} shares (remaining: ${remainingShares - chunkSize})`);
+      logDebug(`attempting to ${actionType} chunk of ${chunkSize} shares (remaining: ${remainingShares - chunkSize})`);
 
       if (actionType === 'buy') {
         await buyShares(chunkSize);
@@ -146,7 +147,7 @@ async function executeTrade(
       remainingShares -= chunkSize;
       currentBackoff = INITIAL_BACKOFF_MS; // Reset backoff on success
 
-      log(`successfully ${actionType === 'buy' ? 'bought' : 'sold'} chunk of ${chunkSize} shares`);
+      logDebug(`successfully ${actionType === 'buy' ? 'bought' : 'sold'} chunk of ${chunkSize} shares`);
 
       // Small delay between chunks to be nice to the server/rate limiter
       if (remainingShares > 0) {
@@ -154,13 +155,13 @@ async function executeTrade(
       }
     } catch (cause) {
       if (cause instanceof RateLimitError) {
-        log(`rate limit hit during ${actionType} chunk, backing off for ${currentBackoff / 1000}s`);
+        logInfo(`rate limit hit during ${actionType} chunk, backing off for ${currentBackoff / 1000}s`);
 
         await sleep(currentBackoff);
 
         currentBackoff = Math.min(currentBackoff * 2, MAX_BACKOFF_MS); // exponential backoff
 
-        log('re-synchronizing state after rate limit backoff...');
+        logInfo('re-synchronizing state after rate limit backoff...');
 
         let newState: HistoryRow;
         try {
@@ -168,15 +169,15 @@ async function executeTrade(
           // no need to call full synchronizeStateAndUpdateHistory which uses 3 requests
           const newPrice = await fetchCurrentSharePrice();
           if (newPrice !== initialPrice) {
-            log(`price changed to ${newPrice} (was ${initialPrice}) after rate limit, aborting trade`);
+            logInfo(`price changed to ${newPrice} (was ${initialPrice}) after rate limit, aborting trade`);
             tradeCompleted = false;
             break;
           } else {
-            log('price remains stable, retrying chunk');
+            logInfo('price remains stable, retrying chunk');
             // loop continues, will retry the same chunk
           }
         } catch (syncCause) {
-          log(`error during post-rate-limit synchronization, aborting trade: %s`, syncCause);
+          logInfo(`error during post-rate-limit synchronization, aborting trade: %s`, syncCause);
           if (syncCause instanceof RequestError) {
             // handle nested request errors? maybe?
           }
@@ -184,11 +185,11 @@ async function executeTrade(
           break; // exit the loop
         }
       } else if (cause instanceof RequestError) {
-        log(`request error during trade execution: %s`, cause);
+        logInfo(`request error during trade execution: %s`, cause);
         tradeCompleted = false;
         break; // exit the loop
       } else {
-        log('fatal error during trade execution: %s', cause);
+        logInfo('fatal error during trade execution: %s', cause);
         throw cause;
       }
     }
@@ -196,9 +197,9 @@ async function executeTrade(
 
   if (remainingShares === 0) {
     tradeCompleted = true;
-    log(`successfully completed ${actionType} order for ${totalShares} shares`);
+    logInfo(`completed ${actionType} order for ${totalShares} shares`);
   } else {
-    log(`trade incomplete, ${remainingShares} shares remaining`);
+    logInfo(`trade incomplete, ${remainingShares} shares remaining`);
   }
 
   return tradeCompleted;
@@ -207,7 +208,7 @@ async function executeTrade(
 // --- main trading cycle logic ---
 
 export async function performTradeCycle(): Promise<void> {
-  log('--- new trade cycle - %s ---', new Date().toISOString());
+  logInfo('--- new trade cycle - %s ---', new Date().toISOString());
 
   let currentState: HistoryRow;
   let currentSummaries: MarketCurrentSummaries;
@@ -219,14 +220,14 @@ export async function performTradeCycle(): Promise<void> {
     currentSummaries = compileMarketCurrentSummaries();
   } catch (cause) {
     if (cause instanceof RateLimitError) {
-      log('rate limit hit during synchronization, skipping cycle :<');
+      logInfo('rate limit hit during synchronization, skipping cycle :<');
       // no need to backoff here, the main loop sleep will handle delay
       return;
     } else if (cause instanceof RequestError) {
-      log('request error during synchronization: %s', cause);
+      logInfo('request error during synchronization: %s', cause);
       throw cause;
     } else {
-      log('fatal error during synchronization: %s', cause);
+      logInfo('fatal error during synchronization: %s', cause);
       throw cause;
     }
   }
@@ -235,14 +236,14 @@ export async function performTradeCycle(): Promise<void> {
   const ownedShares = currentState.shareOwnedCount;
   const walletBeans = currentState.walletBeans;
 
-  log(`current state: price=${currentPrice}, owned=${ownedShares}, wallet=${walletBeans}`);
+  logInfo(`current state: price=${currentPrice}, owned=${ownedShares}, wallet=${walletBeans}`);
 
   // 2. select lookback summary and check if enough data
   const lookbackSummary = currentSummaries[LOOKBACK_SUMMARY_KEY];
-  log(`using lookback: ${LOOKBACK_SUMMARY_KEY} (${lookbackSummary.entryCount} entries)`);
+  logInfo(`using lookback: ${LOOKBACK_SUMMARY_KEY} (${lookbackSummary.entryCount} entries)`);
 
   if (lookbackSummary.entryCount < MIN_DATA_POINTS_FOR_LOOKBACK) {
-    log(`insufficient data points (${lookbackSummary.entryCount} < ${MIN_DATA_POINTS_FOR_LOOKBACK}) in lookback period - holding`);
+    logInfo(`insufficient data points (${lookbackSummary.entryCount} < ${MIN_DATA_POINTS_FOR_LOOKBACK}) in lookback period - holding`);
     return;
   }
 
@@ -254,7 +255,7 @@ export async function performTradeCycle(): Promise<void> {
     return;
   }
 
-  log(`calculated thresholds: buy=${buyThreshold}, sell=${sellThreshold}`);
+  logInfo(`calculated thresholds: buy=${buyThreshold}, sell=${sellThreshold}`);
 
   // 4. decision making
   let actionType: 'buy' | 'sell' | 'hold' = 'hold';
@@ -265,7 +266,7 @@ export async function performTradeCycle(): Promise<void> {
     const maxAffordableBasedOnBeans = Math.floor((walletBeans - MINIMUM_BEAN_RESERVE) / currentPrice);
 
     if (maxAffordableBasedOnBeans <= 0) {
-      log(`price (${currentPrice}) is below buy threshold (${buyThreshold}), but cannot afford shares or below bean reserve`);
+      logInfo(`price (${currentPrice}) is below buy threshold (${buyThreshold}), but cannot afford shares or below bean reserve`);
     } else {
       const desiredBuyAmount = Math.floor(maxAffordableBasedOnBeans * TRADE_FRACTION);
 
@@ -274,9 +275,9 @@ export async function performTradeCycle(): Promise<void> {
 
       if (totalSharesToTrade > 0) {
         actionType = 'buy';
-        log(`price (${currentPrice}) is below buy threshold (${buyThreshold}), planning to buy ${totalSharesToTrade} shares`);
+        logInfo(`price (${currentPrice}) is below buy threshold (${buyThreshold}), planning to buy ${totalSharesToTrade} shares`);
       } else {
-        log(`price (${currentPrice}) is below buy threshold (${buyThreshold}), but calculated buy amount is zero`);
+        logInfo(`price (${currentPrice}) is below buy threshold (${buyThreshold}), but calculated buy amount is zero`);
       }
     }
   }
@@ -285,7 +286,7 @@ export async function performTradeCycle(): Promise<void> {
     const maxSellableBasedOnReserve = ownedShares - MINIMUM_SHARE_RESERVE;
 
     if (maxSellableBasedOnReserve <= 0) {
-      log(`price (${currentPrice}) is above sell threshold (${sellThreshold}), but not enough shares to sell or below share reserve`);
+      logInfo(`price (${currentPrice}) is above sell threshold (${sellThreshold}), but not enough shares to sell or below share reserve`);
     } else {
       const desiredSellAmount = Math.floor(maxSellableBasedOnReserve * TRADE_FRACTION);
 
@@ -294,15 +295,15 @@ export async function performTradeCycle(): Promise<void> {
 
       if (totalSharesToTrade > 0) {
         actionType = 'sell';
-        log(`price (${currentPrice}) is above sell threshold (${sellThreshold}), planning to sell ${totalSharesToTrade} shares`);
+        logInfo(`price (${currentPrice}) is above sell threshold (${sellThreshold}), planning to sell ${totalSharesToTrade} shares`);
       } else {
-        log(`price (${currentPrice}) is above sell threshold (${sellThreshold}), but calculated sell amount is zero`);
+        logInfo(`price (${currentPrice}) is above sell threshold (${sellThreshold}), but calculated sell amount is zero`);
       }
     }
   }
   // hold condition
   else {
-    log(`price (${currentPrice}) is within thresholds buy=${buyThreshold}, sell=${sellThreshold} - holding`);
+    logInfo(`price (${currentPrice}) is within thresholds buy=${buyThreshold}, sell=${sellThreshold} - holding`);
     actionType = 'hold';
   }
 
@@ -310,9 +311,9 @@ export async function performTradeCycle(): Promise<void> {
   if ((actionType === 'buy' || actionType === 'sell') && totalSharesToTrade > 0) {
     const success = await executeTrade(actionType, totalSharesToTrade, currentPrice);
     if (success) {
-      log(`trade successful for ${actionType} ${totalSharesToTrade} shares`);
+      logInfo(`trade successful for ${actionType} ${totalSharesToTrade} shares`);
     } else {
-      log(`trade failed or was aborted for ${actionType} ${totalSharesToTrade} shares`);
+      logInfo(`trade failed or was aborted for ${actionType} ${totalSharesToTrade} shares`);
     }
   }
 }
