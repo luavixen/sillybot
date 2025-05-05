@@ -1,5 +1,8 @@
+import { debug } from 'debug';
 import { Database, Statement } from 'bun:sqlite';
 import { sendRequest } from './request.ts';
+
+const log = debug('bot:market');
 
 // maximum number of shares that can be bought or sold in a single action
 export const MAXIMUM_SHARES_PER_ACTION = 200;
@@ -49,7 +52,8 @@ async function fetchCurrentSharePrice(): Promise<Integer> {
   if ('price' in result && isInteger(result.price)) {
     return result.price;
   } else {
-    throw new Error('fetchCurrentSharePrice invalid response: ' + inspectInvalidResponse(result));
+    const error = new Error('fetchCurrentSharePrice invalid response: ' + inspectInvalidResponse(result));
+    log('%s', error); throw error;
   }
 }
 
@@ -59,7 +63,8 @@ async function fetchCurrentShareOwnedCount(): Promise<Integer> {
   if (isInteger(result)) {
     return result;
   } else {
-    throw new Error('fetchCurrentShareOwnedCount invalid response: ' + inspectInvalidResponse(result));
+    const error = new Error('fetchCurrentShareOwnedCount invalid response: ' + inspectInvalidResponse(result));
+    log('%s', error); throw error;
   }
 }
 
@@ -69,7 +74,8 @@ async function fetchCurrentWalletBeans(): Promise<Integer> {
   if (isInteger(result)) {
     return result;
   } else {
-    throw new Error('fetchCurrentWalletBeans invalid response: ' + inspectInvalidResponse(result));
+    const error =  new Error('fetchCurrentWalletBeans invalid response: ' + inspectInvalidResponse(result));
+    log('%s', error); throw error;
   }
 }
 
@@ -192,7 +198,7 @@ const queryInsertHistory = db.query(`
 `);
 
 /** inserts a new history row */
-export function insertHistory(row: HistoryRow): void {
+function insertHistory(row: HistoryRow): void {
   queryInsertHistory.run(
     row.timestamp,
     row.sharePriceBeans,
@@ -214,7 +220,7 @@ const queryInsertTrade = db.query(`
 `);
 
 /** inserts a new trade row */
-export function insertTrade(row: TradeRow): void {
+function insertTrade(row: TradeRow): void {
   queryInsertTrade.run(
     row.timestamp,
     row.sharePriceBeans,
@@ -229,17 +235,17 @@ export function insertTrade(row: TradeRow): void {
 /** buys the given number of shares at the current market price, maximum 200 shares at once */
 export async function buyShares(shareCount: Integer): Promise<TradeRow> {
   if (!isInteger(shareCount) || shareCount < 0 || shareCount > MAXIMUM_SHARES_PER_ACTION) {
-    throw new Error(`invalid share count: ${shareCount}`);
+    const error = new Error(`invalid share count: ${shareCount}`);
+    log('%s', error); throw error;
   }
 
   const walletOldBeans = await getCurrentWalletBeans();
   const sharePriceBeans = await getCurrentSharePrice();
 
   if (shareCount * sharePriceBeans > walletOldBeans) {
-    throw new Error(`not enough beans in wallet to buy ${shareCount} shares`);
+    const error = new Error(`not enough beans in wallet to buy ${shareCount} shares`);
+    log('%s', error); throw error;
   }
-
-  const shareOwnedCount = await getCurrentShareOwnedCount();
 
   await sendRequest('POST', `/games/sillyexchange/buy/${shareCount}`, {});
 
@@ -247,6 +253,7 @@ export async function buyShares(shareCount: Integer): Promise<TradeRow> {
   cachedState.shareOwnedCount! += shareCount;
   cachedState.walletBeans! -= shareCount * sharePriceBeans;
 
+  const shareOwnedCount = await getCurrentShareOwnedCount();
   const walletNewBeans = await getCurrentWalletBeans();
 
   const row: TradeRow = {
@@ -261,18 +268,26 @@ export async function buyShares(shareCount: Integer): Promise<TradeRow> {
 
   insertTrade(row);
 
+  log('buyShares price=%d shares=%d owned=%d wallet=%d', sharePriceBeans, shareCount, shareOwnedCount, walletNewBeans);
+
   return row;
 }
 
 /** sells the given number of shares at the current market price, maximum 200 shares at once */
 export async function sellShares(shareCount: Integer): Promise<TradeRow> {
   if (!isInteger(shareCount) || shareCount < 0 || shareCount > MAXIMUM_SHARES_PER_ACTION) {
-    throw new Error(`invalid share count: ${shareCount}`);
+    const error = new Error(`invalid share count: ${shareCount}`);
+    log('%s', error); throw error;
+  }
+
+  const shareOldOwnedCount = await getCurrentShareOwnedCount();
+
+  if (shareCount > shareOldOwnedCount) {
+    const error = new Error(`not enough shares owned to sell ${shareCount} shares`);
+    log('%s', error); throw error;
   }
 
   const walletOldBeans = await getCurrentWalletBeans();
-
-  const shareOwnedCount = await getCurrentShareOwnedCount();
   const sharePriceBeans = await getCurrentSharePrice();
 
   await sendRequest('POST', `/games/sillyexchange/sell/${shareCount}`, {});
@@ -281,12 +296,13 @@ export async function sellShares(shareCount: Integer): Promise<TradeRow> {
   cachedState.shareOwnedCount! -= shareCount;
   cachedState.walletBeans! += shareCount * sharePriceBeans;
 
+  const shareNewOwnedCount = await getCurrentShareOwnedCount();
   const walletNewBeans = await getCurrentWalletBeans();
 
   const row: TradeRow = {
     timestamp: now(),
     sharePriceBeans,
-    shareOwnedCount,
+    shareOwnedCount: shareNewOwnedCount,
     shareBoughtCount: 0,
     shareSoldCount: shareCount,
     walletOldBeans,
@@ -294,6 +310,8 @@ export async function sellShares(shareCount: Integer): Promise<TradeRow> {
   };
 
   insertTrade(row);
+
+  log('sellShares price=%d shares=%d owned=%d wallet=%d', sharePriceBeans, shareCount, shareNewOwnedCount, walletNewBeans);
 
   return row;
 }
@@ -321,6 +339,8 @@ export async function synchronizeStateAndUpdateHistory(): Promise<HistoryRow> {
   const sharePriceBeans = await fetchCurrentSharePrice();
   const shareOwnedCount = await fetchCurrentShareOwnedCount();
   const walletBeans = await fetchCurrentWalletBeans();
+
+  log('synchronizeStateAndUpdateHistory price=%d owned=%d wallet=%d', sharePriceBeans, shareOwnedCount, walletBeans);
 
   // update the cached state
   cachedState.sharePriceBeans = sharePriceBeans;

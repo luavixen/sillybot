@@ -16,4 +16,5 @@ there are no fees! but there are limits:
 - maximum of 200 shares bought or sold per request/action
 - maximum of 600 requests per minute
 
-if you're writing a bot, make sure to keep these limits in mind!
+if you're writing a bot, make sure to keep these limits in mind...
+once you go astronomical you'll start to hit them HARD!

@@ -1,3 +1,6 @@
+import { debug } from 'debug';
+
+const log = debug('bot:request');
 
 const requestToken = process.env.TOKEN;
 const requestUserAgent = 'luas-awesome-exchange-bot/1337';
@@ -18,9 +21,15 @@ export class RateLimitError extends RequestError {
   }
 }
 
+function inspect(value: unknown): string {
+  return Bun.inspect(value, { depth: 3, compact: true, colors: false });
+}
+
 /** sends a request to sillypost.net */
 export async function sendRequest(method: string, path: string, init: BunFetchRequestInit): Promise<any> {
   const url = new URL(path, 'https://sillypost.net');
+
+  log(`send ${method} ${url} ${inspect(init)}`);
 
   // send request
   let response: Response;
@@ -42,7 +51,8 @@ export async function sendRequest(method: string, path: string, init: BunFetchRe
       ...init
     });
   } catch (cause) {
-    throw new RequestError(`request failed to ${method} ${url}`, { cause });
+    const error = new RequestError(`request failed to ${method} ${url}`, { cause });
+    log('%s', error); throw error;
   }
 
   // parse body
@@ -55,18 +65,25 @@ export async function sendRequest(method: string, path: string, init: BunFetchRe
       body = await response.json();
     }
   } catch (cause) {
-    throw new RequestError(`response invalid for ${method} ${url}`, { cause });
+    const error = new RequestError(`response invalid for ${method} ${url}`, { cause });
+    log('%s', error); throw error;
   }
 
   // handle errors
   if (!response.ok) {
-    const message = body?.message || body?.error || Bun.inspect(body, { depth: 3, compact: true, colors: false });
+    const message = body?.message || body?.error || inspect(body);
+
+    let error: Error;
     if (response.status === 429) {
-      throw new RateLimitError(`rate limit exceeded for ${method} ${url} error: ${message}`);
+      error = new RateLimitError(`rate limit exceeded for ${method} ${url} error: ${message}`);
     } else {
-      throw new RequestError(`response ${response.status} for ${method} ${url} error: ${message}`);
+      error = new RequestError(`response ${response.status} for ${method} ${url} error: ${message}`);
     }
+
+    log('%s', error); throw error;
   }
+
+  log(`response ${response.status} body ${inspect(body)}`);
 
   return body;
 }
