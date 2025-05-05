@@ -350,10 +350,6 @@ export async function synchronizeStateAndUpdateHistory(): Promise<HistoryRow> {
 
   const rowPrevious = getLatestHistory();
 
-  if (rowPrevious != null && rowPrevious.sharePriceBeans === sharePriceBeans) {
-    return rowPrevious;
-  }
-
   const rowCurrent: HistoryRow = {
     timestamp: now(),
     sharePriceBeans,
@@ -361,7 +357,9 @@ export async function synchronizeStateAndUpdateHistory(): Promise<HistoryRow> {
     walletBeans,
   };
 
-  insertHistory(rowCurrent);
+  if (rowPrevious != null && rowPrevious.sharePriceBeans === sharePriceBeans) {
+    insertHistory(rowCurrent);
+  }
 
   return rowCurrent;
 }

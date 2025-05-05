@@ -51,60 +51,60 @@ function createTradeDecision(
 }
 
 function decideNextTrade(
-  currentPrice: Integer,
-  shareCount: Integer,
+  priceBeans: Integer,
+  ownedCount: Integer,
   walletBeans: Integer,
 ): TradeDecision {
-  const maximumShareCount = Math.floor(walletBeans / currentPrice);
+  const maximumShareBuyCount = Math.floor(walletBeans / priceBeans);
 
-  if (shareCount > 0) {
+  if (maximumShareBuyCount > 0) {
 
-    if (currentPrice <= 40) {
-      return createTradeDecision('buy', shareCount * 0.95);
+    if (priceBeans <= 40) {
+      return createTradeDecision('buy', maximumShareBuyCount * 0.95);
     }
 
-    if (currentPrice <= 65) {
-      return createTradeDecision('buy', shareCount * 0.8);
+    if (priceBeans <= 65) {
+      return createTradeDecision('buy', maximumShareBuyCount * 0.8);
     }
 
-    if (currentPrice <= 80) {
-      return createTradeDecision('buy', shareCount * 0.5);
+    if (priceBeans <= 80) {
+      return createTradeDecision('buy', maximumShareBuyCount * 0.5);
     }
 
-    if (currentPrice <= 95) {
-      return createTradeDecision('buy', shareCount * 0.25);
+    if (priceBeans <= 95) {
+      return createTradeDecision('buy', maximumShareBuyCount * 0.25);
     }
 
-    if (currentPrice <= 100) {
-      return createTradeDecision('buy', shareCount * 0.05);
+    if (priceBeans <= 100) {
+      return createTradeDecision('buy', maximumShareBuyCount * 0.05);
     }
 
   }
 
-  if (maximumShareCount > 0) {
+  if (ownedCount > 0) {
 
-    if (currentPrice >= 100) {
-      return createTradeDecision('sell', maximumShareCount * 0.1);
+    if (priceBeans >= 150) {
+      return createTradeDecision('sell', ownedCount * 0.99);
     }
 
-    if (currentPrice >= 110) {
-      return createTradeDecision('sell', maximumShareCount * 0.25);
+    if (priceBeans >= 140) {
+      return createTradeDecision('sell', ownedCount * 0.95);
     }
 
-    if (currentPrice >= 120) {
-      return createTradeDecision('sell', maximumShareCount * 0.70);
+    if (priceBeans >= 130) {
+      return createTradeDecision('sell', ownedCount * 0.80);
     }
 
-    if (currentPrice >= 130) {
-      return createTradeDecision('sell', maximumShareCount * 0.80);
+    if (priceBeans >= 120) {
+      return createTradeDecision('sell', ownedCount * 0.70);
     }
 
-    if (currentPrice >= 140) {
-      return createTradeDecision('sell', maximumShareCount * 0.95);
+    if (priceBeans >= 110) {
+      return createTradeDecision('sell', ownedCount * 0.25);
     }
 
-    if (currentPrice >= 150) {
-      return createTradeDecision('sell', maximumShareCount * 0.99);
+    if (priceBeans >= 100) {
+      return createTradeDecision('sell', ownedCount * 0.1);
     }
 
   }
