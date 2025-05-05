@@ -2,7 +2,7 @@ import { debug } from 'debug';
 
 import { RequestError, RateLimitError } from './request.ts';
 import { now } from './market.ts';
-import { performTradeCycle } from './strategy.ts';
+import { performTradeCycle } from './strategy-dumb.ts';
 
 /** interval between trade cycles in seconds */
 const TRADE_CYCLE_INTERVAL = 10 * 60 * 1000; // 10 minutes
@@ -35,8 +35,6 @@ async function runTradingLoop(): Promise<never> {
     await new Promise((resolve) => setTimeout(resolve, sleepSeconds));
   }
 }
-
-log('hello world :3c');
 
 runTradingLoop().catch((cause) => {
   log('fatal error: %s', cause);

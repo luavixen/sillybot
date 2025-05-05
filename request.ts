@@ -3,7 +3,7 @@ import { debug } from 'debug';
 const log = debug('bot:request');
 
 /** maximum number of requests per minute */
-export const MAXIMUM_REQUESTS_PER_MINUTE = 570;
+export const MAXIMUM_REQUESTS_PER_MINUTE = 590;
 
 /** array of js timestamps, one for each request */
 let previousRequestTimestamps: number[] = [];
